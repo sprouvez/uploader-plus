@@ -8,6 +8,13 @@ function applyProperties(file, properties) {
                 logger.log("Applying property: " + property + " - value: " + value);
             }
             repoFormData.addFieldData(property, value);
+        } else if (property == "prop_cm_name") {
+          // Update filename
+          var propName = properties[property];
+          if (file.name != propName) {
+            file.properties["cm:name"] = propName;
+            file.save();
+          }
         }
     }
     formService.saveForm("node", file.nodeRef, repoFormData);

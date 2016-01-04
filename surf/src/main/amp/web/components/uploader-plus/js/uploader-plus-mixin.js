@@ -147,7 +147,6 @@ SoftwareLoop.UploaderPlusMixin = {
         if (cmNameNode) {
             Alfresco.logger.debug("metadata-form_prop_cm_name found");
             cmNameNode.value = data.name;
-            cmNameNode.readOnly = true;
         }
 
         this.formUi = Alfresco.util.ComponentManager.find({
@@ -238,6 +237,13 @@ SoftwareLoop.UploaderPlusMixin = {
         if (progressInfoEl && progressInfoEl.length === 1) {
             Alfresco.logger.debug("fileupload-progressInfo-span found");
             YAHOO.util.Dom.addClass(progressInfoEl[0], "uploader-plus");
+
+            // Update progress info (node name)
+            var cmNameId = this.id + "-metadata-form_prop_cm_name";
+            var cmNameNode = YAHOO.util.Dom.get(cmNameId);
+            if (cmNameNode) {
+              progressInfoEl[0].innerHTML = cmNameNode.value;
+            }
         } else {
             Alfresco.logger.debug("fileupload-progressInfo-span not found");
         }
