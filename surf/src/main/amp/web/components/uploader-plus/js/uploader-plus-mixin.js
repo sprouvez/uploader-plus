@@ -87,6 +87,12 @@ SoftwareLoop.UploaderPlusMixin = {
             this,
             true
         );
+
+        // No need for a list if there is only one element
+        if (this.types.length == 1) {
+            YAHOO.util.Dom.setStyle(this.contentTypeSelectNode.parentNode.parentNode, 'display', 'none');
+        }
+
         Alfresco.logger.debug("END populateSelect");
     },
 
