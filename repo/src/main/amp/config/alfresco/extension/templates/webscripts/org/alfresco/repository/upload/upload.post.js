@@ -12,6 +12,14 @@ function applyProperties(file, properties) {
           // Update filename
           var propName = properties[property];
           if (file.name != propName) {
+            if (propName.indexOf('.') === -1) {
+              // Add original file extension
+              var ext = getFileExtension(file.name);
+              if (ext) {
+                propName += '.' + ext;
+              }
+            }
+
             file.properties["cm:name"] = propName;
             file.save();
           }
@@ -19,6 +27,15 @@ function applyProperties(file, properties) {
     }
     formService.saveForm("node", file.nodeRef, repoFormData);
 }
+
+function getFileExtension (filePath) {
+  var match = (new String(filePath)).match(/^.*\.([^\.]*)$/);
+  if (match && match.length > 1) {
+    return match[1];
+  }
+
+  return '';
+};
 // END: uploader-plus customisations
 
 function extractMetadata(file) {
