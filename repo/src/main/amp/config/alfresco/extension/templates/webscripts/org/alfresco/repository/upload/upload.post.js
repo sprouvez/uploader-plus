@@ -8,21 +8,6 @@ function applyProperties(file, properties) {
                 logger.log("Applying property: " + property + " - value: " + value);
             }
             repoFormData.addFieldData(property, value);
-        } else if (property == "prop_cm_name") {
-          // Update filename
-          var propName = properties[property];
-          if (file.name != propName) {
-            if (propName.indexOf('.') === -1) {
-              // Add original file extension
-              var ext = getFileExtension(file.name);
-              if (ext) {
-                propName += '.' + ext;
-              }
-            }
-
-            file.properties["cm:name"] = propName;
-            file.save();
-          }
         }
     }
     formService.saveForm("node", file.nodeRef, repoFormData);
@@ -295,6 +280,22 @@ function main() {
                     return;
                 }
             }
+
+            // BEGIN: uploader-plus customisations
+            if (properties.hasOwnProperty("prop_cm_name")) {
+              var newFilename = properties["prop_cm_name"];
+              if (filename != newFilename) {
+                if (newFilename.indexOf('.') === -1) {
+                  // Add original file extension
+                  var ext = getFileExtension(filename);
+                  if (ext) {
+                    newFilename += '.' + ext;
+                  }
+                }
+              }
+              filename = newFilename;
+            }
+            // END: uploader-plus customisations
 
             /**
              * Existing file handling.
