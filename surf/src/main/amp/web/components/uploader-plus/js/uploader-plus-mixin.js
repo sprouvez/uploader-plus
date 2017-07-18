@@ -18,7 +18,7 @@ SoftwareLoop.UploaderPlusMixin = {
     loadTypes: function (callback) {
         Alfresco.logger.debug("loadTypes", arguments);
         var url;
-        if (this.showConfig.destination) {
+        if (this.showConfig.destination && Alfresco.util.NodeRef(this.showConfig.destination).id) {
             Alfresco.logger.debug("Repository folder", this.showConfig.destination);
             url = YAHOO.lang.substitute(
                 this.allowedContentTypesDestinationTemplate,
