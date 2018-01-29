@@ -39,8 +39,47 @@ function exitUpload(statusCode, statusMsg) {
     status.redirect = true;
 }
 
-function main() {
-    try {
+/**
+ * Creates an new filename by adding a suffix to existing one in order to avoid duplicates in folder
+ * The check that folder already contains the filename should be done before calling this function
+ * @param filename - existing filename
+ * @param destNode - folder node
+ * @returns
+ */
+function createUniqueNameInFolder(filename, destNode)
+{
+   var counter = 1,
+   tmpFilename,
+   dotIndex,
+   existingFile;
+   do
+   {
+      dotIndex = filename.lastIndexOf(".");
+      if (dotIndex == 0)
+      {
+         // File didn't have a proper 'name' instead it had just a suffix and started with a ".", create "1.txt"
+         tmpFilename = counter + filename;
+      }
+      else if (dotIndex > 0)
+      {
+         // Filename contained ".", create "filename-1.txt"
+         tmpFilename = filename.substring(0, dotIndex) + "-" + counter + filename.substring(dotIndex);
+      }
+      else
+      {
+         // Filename didn't contain a dot at all, create "filename-1"
+         tmpFilename = filename + "-" + counter;
+      }
+      existingFile = destNode.childByNamePath(tmpFilename);
+      counter++;
+   } while (existingFile !== null);
+   return tmpFilename;
+}
+
+function main()
+{
+   try
+   {
         var filename = null,
             content = null,
             mimetype = null,
@@ -53,6 +92,7 @@ function main() {
 
         // Upload specific
         var uploadDirectory = null,
+            createDirectory = false,
             contentType = null,
             aspects = [],
             overwrite = true; // If a filename clashes for a versionable file
@@ -64,6 +104,7 @@ function main() {
         // Update specific
         var updateNodeRef = null,
             majorVersion = false,
+            updateNameAndMimetype = false,
             description = "";
 
         // Prevents Flash- and IE8-sourced "null" values being set for those parameters where they are invalid.
@@ -76,6 +117,10 @@ function main() {
         if (args["lang"] != null) {
             utils.setLocale(args["lang"]);
         }
+
+        var uploadConfig = new XML(config.script),
+            autoVersion = uploadConfig.autoVersion.toString() == "" ? null : uploadConfig.autoVersion.toString() == "true",
+            autoVersionProps = uploadConfig.autoVersionProps.toString() == "" ? null : uploadConfig.autoVersionProps.toString() == "true";
 
         // Parse file attributes
         for each(field in formdata.fields)
@@ -148,6 +193,14 @@ function main() {
                 case "thumbnails":
                     thumbnailNames = field.value;
                     break;
+
+                case "updatenameandmimetype":
+                    updateNameAndMimetype = field.value == "true";
+                    break;
+
+                case "createdirectory":
+                    createDirectory = field.value == "true";
+                    break;
                 // BEGIN: uploader-plus customisations
                 default:
                     if (fieldName.indexOf("prop_") === 0 || fieldName.indexOf("assoc_") === 0) {
@@ -177,7 +230,7 @@ function main() {
              * Site mode.
              * Need valid site and container. Try to create container if it doesn't exist.
              */
-            site = siteService.getSite(siteId);
+            site = siteService.getSiteInfo(siteId);
             if (site === null) {
                 exitUpload(404, "Site (" + siteId + ") not found.");
                 return;
@@ -232,25 +285,40 @@ function main() {
                 return;
             }
 
-            if (updateNode.isLocked) {
-                // We cannot update a locked document
-                exitUpload(404, "Cannot update locked document '" + updateNodeRef + "', supply a reference to its working copy instead.");
-                return;
+            if (updateNameAndMimetype) {
+               //check to see if name is already used in folder
+               var existingFile = updateNode.getParent().childByNamePath(filename),
+                   newFilename = filename;
+               if (existingFile !== null && existingFile.nodeRef.id  !== updateNodeRef.id) {
+                 //name it's already used for other than node to update; create a new one
+                 newFilename = createUniqueNameInFolder(filename, updateNode.getParent());
+               }
+               //update node name
+               updateNode.setName(newFilename);
             }
 
-            if (!updateNode.hasAspect("cm:workingcopy")) {
-                // Ensure the file is versionable (autoVersion = true, autoVersionProps = false)
-                updateNode.ensureVersioningEnabled(true, false);
+            var workingcopy = updateNode.hasAspect("cm:workingcopy");
+            if (!workingcopy && updateNode.isLocked) {
+              // We cannot update a locked document (except working copy as per MNT-8736)
+              exitUpload(404, "Cannot update locked document '" + updateNodeRef + "', supply a reference to its working copy instead.");
+              return;
+            }
 
-                // It's not a working copy, do a check out to get the actual working copy
-                updateNode = updateNode.checkoutForUpload();
+            if (!workingcopy) {
+              // Ensure the file is versionable (autoVersion and autoVersionProps read from config)
+              if (autoVersion != null && autoVersionProps != null) {
+                updateNode.ensureVersioningEnabled(autoVersion, autoVersionProps);
+              }
+              else {
+                updateNode.ensureVersioningEnabled();
+              }
+
+              // It's not a working copy, do a check out to get the actual working copy
+              updateNode = updateNode.checkoutForUpload();
             }
 
             // Update the working copy content
-            updateNode.properties.content.write(content);
-            // Reset working copy mimetype and encoding
-            updateNode.properties.content.guessMimetype(filename);
-            updateNode.properties.content.guessEncoding();
+            updateNode.properties.content.write(content, updateNameAndMimetype, true);
             // check it in again, with supplied version history note
             updateNode = updateNode.checkin(description, majorVersion);
             if (aspects.length != 0) {
@@ -274,28 +342,44 @@ function main() {
              * Upload new file to destNode (calculated earlier) + optional subdirectory
              */
             if (uploadDirectory !== null && uploadDirectory.length > 0) {
-                destNode = destNode.childByNamePath(uploadDirectory);
-                if (destNode === null) {
-                    exitUpload(404, "Cannot upload file since upload directory '" + uploadDirectory + "' does not exist.");
-                    return;
-                }
-            }
-
-            // BEGIN: uploader-plus customisations
-            if (properties.hasOwnProperty("prop_cm_name")) {
-              var newFilename = properties["prop_cm_name"];
-              if (filename != newFilename) {
-                if (newFilename.indexOf('.') === -1) {
-                  // Add original file extension
-                  var ext = getFileExtension(filename);
-                  if (ext) {
-                    newFilename += '.' + ext;
+              var child = destNode.childByNamePath(uploadDirectory);
+              if (child === null && createDirectory) {
+                var splitPath = uploadDirectory.replace(new RegExp("/$"), "").split("/");
+                child = destNode;
+                for (var i = 0, ii = splitPath.length; i < ii; i++) {
+                  var folderName = splitPath[i];
+                  var folder = child.childByNamePath(folderName);
+                  if (folder === null) {
+                    try {
+                      child = child.createFolder(folderName);
+                    } catch (e) {
+                      exitUpload(404, "Cannot create directory or subdirectory");
+                      return;
+                    }
+                  } else {
+                    child = folder;
                   }
                 }
+
+                if (child === null) {
+                  exitUpload(404, "Cannot upload file since upload directory '" + uploadDirectory + "' does not exist.");
+                  return;
+                }
               }
-              filename = newFilename;
+
+              // MNT-12565
+              while (child.isDocument)
+              {
+                 if (child.parent === null)
+                 {
+                    exitUpload(404, "Cannot upload file. You do not have permissions to access the parent folder for the document.");
+                    return;
+                 }
+                 child = child.parent;
+              }
+
+              destNode = child;
             }
-            // END: uploader-plus customisations
 
             /**
              * Existing file handling.
@@ -305,12 +389,7 @@ function main() {
                 // File already exists, decide what to do
                 if (existingFile.hasAspect("cm:versionable") && overwrite) {
                     // Upload component was configured to overwrite files if name clashes
-                    existingFile.properties.content.write(content);
-
-                    // Reapply mimetype as upload may have been via Flash - which always sends binary mimetype
-                    existingFile.properties.content.guessMimetype(filename);
-                    existingFile.properties.content.guessEncoding();
-                    existingFile.save();
+                    existingFile.properties.content.write(content, false, true);
 
                     // Extract the metadata
                     // (The overwrite policy controls which if any parts of
@@ -324,29 +403,8 @@ function main() {
                     return;
                 }
                 else {
-                    // Upload component was configured to find a new unique name for clashing filenames
-                    var counter = 1,
-                        tmpFilename,
-                        dotIndex;
-
-                    while (existingFile !== null) {
-                        dotIndex = filename.lastIndexOf(".");
-                        if (dotIndex == 0) {
-                            // File didn't have a proper 'name' instead it had just a suffix and started with a ".", create "1.txt"
-                            tmpFilename = counter + filename;
-                        }
-                        else if (dotIndex > 0) {
-                            // Filename contained ".", create "filename-1.txt"
-                            tmpFilename = filename.substring(0, dotIndex) + "-" + counter + filename.substring(dotIndex);
-                        }
-                        else {
-                            // Filename didn't contain a dot at all, create "filename-1"
-                            tmpFilename = filename + "-" + counter;
-                        }
-                        existingFile = destNode.childByNamePath(tmpFilename);
-                        counter++;
-                    }
-                    filename = tmpFilename;
+                  // Upload component was configured to find a new unique name for clashing filenames
+                  filename = createUniqueNameInFolder(filename, destNode);
                 }
             }
 

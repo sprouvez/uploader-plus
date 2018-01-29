@@ -153,11 +153,12 @@
                     formData.append("siteId", fileInfo.uploadData.siteId);
                     formData.append("containerId", fileInfo.uploadData.containerId);
                     formData.append("uploaddirectory", fileInfo.uploadData.uploaddirectory);
+                    formData.append("createdirectory", fileInfo.uploadData.createdirectory ? "true" : "false");
                     formData.append("majorVersion", fileInfo.uploadData.majorVersion ? "true" : "false");
                     formData.append("username", fileInfo.uploadData.username);
                     formData.append("overwrite", fileInfo.uploadData.overwrite);
                     formData.append("thumbnails", fileInfo.uploadData.thumbnails);
-
+                    formData.append("updatenameandmimetype", fileInfo.uploadData.updateNameAndMimetype);
 
                     if (fileInfo.uploadData.updateNodeRef) {
                         formData.append("updateNodeRef", fileInfo.uploadData.updateNodeRef);
