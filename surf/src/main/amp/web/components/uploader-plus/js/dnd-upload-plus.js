@@ -1,8 +1,30 @@
 (function () {
     Alfresco.logger.debug("dnd-upload-plus.js");
 
-    var oldConstructor = Alfresco.DNDUpload;
+    // Firefox multi-upload detection
+    var docList = Alfresco.DocumentList;
+    if (docList) {
+      var oldOnDocumentListDrop = docList.prototype.onDocumentListDrop;
+      docList.prototype.onDocumentListDrop = function DL_onDocumentListDrop(e) {
+        var dndUpload = Alfresco.util.ComponentManager.findFirst("Alfresco.DNDUpload");
+        if (dndUpload && YAHOO.env.ua.gecko) {
+          delete dndUpload.firefoxMultiUpload;
+          delete dndUpload.firefoxMultiUploadReady;
 
+          try {
+            if (e.dataTransfer.files !== undefined && e.dataTransfer.files !== null && e.dataTransfer.files.length > 0) {
+              dndUpload.firefoxMultiUpload = true;
+            }
+          } catch(exception) {
+            Alfresco.logger.error("An error occurred on drop event: ", exception);
+          }
+        }
+
+        oldOnDocumentListDrop.call(this, e);
+      };
+    }
+
+    var oldConstructor = Alfresco.DNDUpload;
     Alfresco.DNDUpload = function (htmlId) {
         Alfresco.logger.debug("DNDUpload constructor");
         var that = new oldConstructor(htmlId);
@@ -30,27 +52,268 @@
             },
 
             _spawnUploads: function () {
-                Alfresco.logger.debug("_spawnUploads", arguments);
+              Alfresco.logger.debug("_spawnUploads", arguments);
+
+              // Firefox multi-upload management
+              // We delay upload treatment, until types has been loaded
+              if (this.firefoxMultiUpload && !this.firefoxMultiUploadReady) {
+                Alfresco.logger.debug("Upload multiple files with firefox");
+
+                // loadTypes has not been called yet, skip upload treatment
                 if (typeof(this.types) === "undefined") {
-                    Alfresco.logger.debug("Types not loaded yet. Postponing");
-                    this.spawnUploadsBooked = true;
-                    return;
+                  Alfresco.logger.debug("Types not loaded yet. Postponing");
+                  this.spawnUploadsBooked = true;
+                  return;
                 }
-                if (this.showConfig.mode === this.MODE_SINGLE_UPDATE) {
-                    Alfresco.logger.debug("Single update");
+
+                if (this.dataTable.getRecordSet().getLength() == Object.keys(this.fileStore).length) {
+                  this.firefoxMultiUploadReady = true;
+                  this.currentRecordIndex = 0;
+
+                  // Begin upload
+                  if (this.types) {
+                    this.savedDialogTitle = YAHOO.util.Dom.get(this.id + "-title-span").innerText;
+                    this.records = this.dataTable.getRecordSet().getRecords();
+                    Alfresco.logger.debug("records", this.records);
+                    this.showMetadataDialog();
+                  } else {
                     return Alfresco.DNDUpload.prototype._spawnUploads.apply(this);
+                  }
                 }
-                if (!this.types) {
-                    Alfresco.logger.debug("Types is null");
-                    return Alfresco.DNDUpload.prototype._spawnUploads.apply(this);
-                }
-                this.savedDialogTitle =
-                    YAHOO.util.Dom.get(this.id + "-title-span").innerText;
-                this.records = this.dataTable.getRecordSet().getRecords();
-                Alfresco.logger.debug("records", this.records);
-                this.currentRecordIndex = 0;
-                this.showMetadataDialog();
-                Alfresco.logger.debug("END _spawnUploads");
+                return;
+              }
+
+              if (typeof(this.types) === "undefined") {
+                  Alfresco.logger.debug("Types not loaded yet. Postponing");
+                  this.spawnUploadsBooked = true;
+                  return;
+              }
+              if (this.showConfig.mode === this.MODE_SINGLE_UPDATE) {
+                  Alfresco.logger.debug("Single update");
+                  return Alfresco.DNDUpload.prototype._spawnUploads.apply(this);
+              }
+              if (!this.types) {
+                Alfresco.logger.debug("Types is null");
+                return Alfresco.DNDUpload.prototype._spawnUploads.apply(this);
+              }
+              this.savedDialogTitle =
+                  YAHOO.util.Dom.get(this.id + "-title-span").innerText;
+              this.records = this.dataTable.getRecordSet().getRecords();
+              Alfresco.logger.debug("records", this.records);
+              this.currentRecordIndex = 0;
+              this.showMetadataDialog();
+              Alfresco.logger.debug("END _spawnUploads");
+            },
+
+            /**
+             * @method _addFiles
+             * @param i The index in the file to upload
+             * @param max The count of files to upload (recursion stops when i is no longer less than max)
+             * @param scope Should be set to the widget scope (i.e. this).
+             */
+            _addFiles: function (i, max, scope) {
+               var uniqueFileToken;
+               if (i < max)
+               {
+                  var file = scope.showConfig.files[i];
+                  if (!this._getFileValidationErrors(file))
+                  {
+                     //**************************************************************************
+                     // UploaderPlus customization
+                     // Generate unique file id to allow multi-upload on firefox
+                     //**************************************************************************
+                     var id = 'xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                       var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                       return v.toString(16);
+                     });
+                     //**************************************************************************
+                     // End uploaderPlus customization
+                     //**************************************************************************
+                     var fileId = "file-" + id + "-" + i;
+                     try
+                     {
+                        /**
+                         * UPLOAD PROGRESS LISTENER
+                         */
+                        var progressListener = function DNDUpload_progressListener(e)
+                        {
+                          Alfresco.logger.debug("File upload progress update received", e);
+                          if (e.lengthComputable)
+                          {
+                              try
+                              {
+                                 var percentage = Math.round((e.loaded * 100) / e.total),
+                                     fileInfo = scope.fileStore[fileId];
+                                 fileInfo.progressPercentage.innerHTML = percentage + "%";
+
+                                 // Set progress position
+                                 var left = (-400 + ((percentage/100) * 400));
+                                 Dom.setStyle(fileInfo.progress, "left", left + "px");
+                                 scope._updateAggregateProgress(fileInfo, e.loaded);
+
+                                 // Save value of how much has been loaded for the next iteration
+                                 fileInfo.lastProgress = e.loaded;
+                              }
+                              catch(exception)
+                              {
+                                 Alfresco.logger.error("The following error occurred processing an upload progress event: ", exception);
+                              }
+                          }
+                          else
+                          {
+                              Alfresco.logger.debug("File upload progress not computable", e);
+                          }
+                       };
+
+                       /**
+                        * UPLOAD COMPLETION LISTENER
+                        */
+                       var successListener = function DNDUpload_successListener(e)
+                       {
+                          try
+                          {
+                             Alfresco.logger.debug("File upload completion notification received", e);
+
+                             // The individual file has been transfered completely
+                             // Now adjust the gui for the individual file row
+                             var fileInfo = scope.fileStore[fileId];
+                             if (fileInfo.request.readyState != 4)
+                             {
+                                // There is an occasional timing issue where the upload completion event fires before
+                                // the readyState is correctly updated. This means that we can't check the upload actually
+                                // completed successfully, if this occurs then we'll attach a function to the onreadystatechange
+                                // extension point and things to catch up before we check everything was ok...
+                                fileInfo.request.onreadystatechange = function DNDUpload_onreadystatechange()
+                                {
+                                   if (fileInfo.request.readyState == 4)
+                                   {
+                                      scope._processUploadCompletion(fileInfo);
+                                   }
+                                }
+                             }
+                             else
+                             {
+                                // If the request correctly indicates that the response has returned then we can process
+                                // it to ensure that files have been uploaded correctly.
+                                scope._processUploadCompletion(fileInfo);
+                             }
+                          }
+                          catch(exception)
+                          {
+                             Alfresco.logger.error("The following error occurred processing an upload completion event: ", exception);
+                          }
+                        };
+
+                        /**
+                         * UPLOAD FAILURE LISTENER
+                         */
+                        var failureListener = function DNDUpload_failureListener(e)
+                        {
+                           try
+                           {
+                              var fileInfo = scope.fileStore[fileId];
+
+                                 // This sometimes gets called twice, make sure we only adjust the gui once
+                                 if (fileInfo.state !== scope.STATE_FAILURE)
+                                 {
+                                    scope._processUploadFailure(fileInfo, e.status);
+                                 }
+                              }
+                              catch(exception)
+                           {
+                              Alfresco.logger.error("The following error occurred processing an upload failure event: ", exception);
+                           }
+                        };
+
+                        // Get the name of the file (note that we use ".name" and NOT ".fileName" which is non-standard and it's use
+                        // will break FireFox 7)...
+                        var fileName = file.name,
+                            updateNameAndMimetype = false;
+                        if (!!scope.showConfig.newVersion && scope.showConfig.updateFilename && scope.showConfig.updateFilename !== fileName)
+                        {
+                            updateNameAndMimetype = true;
+                        }
+
+                        // Add the event listener functions to the upload properties of the XMLHttpRequest object...
+                        var request = new XMLHttpRequest();
+
+                        // Add the data to the upload property of XMLHttpRequest so that we can determine which file each
+                        // progress update relates to (the event argument passed in the progress function does not contain
+                        // file name details)...
+                        request.upload._fileData = fileId;
+                        request.upload.addEventListener("progress", progressListener, false);
+                        request.upload.addEventListener("load", successListener, false);
+                        request.upload.addEventListener("error", failureListener, false);
+
+                        // Construct the data that will be passed to the YUI DataTable to add a row...
+                        data = {
+                            id: fileId,
+                            name: fileName,
+                            size: scope.showConfig.files[i].size
+                        };
+
+                        // Get the nodeRef to update if available (this is required to perform version update)...
+                        var updateNodeRef = null;
+                        if (scope.suppliedConfig && scope.suppliedConfig.updateNodeRef)
+                        {
+                           updateNodeRef = scope.suppliedConfig.updateNodeRef;
+                        }
+
+                        // Construct an object containing the data required for file upload...
+                        var uploadDir = file.relativePath || "";
+                        if (scope.showConfig.uploadDirectory && scope.showConfig.uploadDirectory !== "/")
+                        {
+                           uploadDir = scope.showConfig.uploadDirectory + "/" + uploadDir;
+                        }
+                        var uploadData =
+                        {
+                           filedata: scope.showConfig.files[i],
+                           filename: fileName,
+                           destination: scope.showConfig.destination,
+                           siteId: scope.showConfig.siteId,
+                           containerId: scope.showConfig.containerId,
+                           uploaddirectory: uploadDir,
+                           createdirectory: true,
+                           majorVersion: !scope.minorVersion.checked,
+                           updateNodeRef: updateNodeRef,
+                           description: scope.description.value,
+                           overwrite: scope.showConfig.overwrite,
+                           thumbnails: scope.showConfig.thumbnails,
+                           username: scope.showConfig.username,
+                           updateNameAndMimetype: updateNameAndMimetype
+                        };
+
+                        // Add the upload data to the file store. It is important that we don't initiate the XMLHttpRequest
+                        // send operation before the YUI DataTable has finished rendering because if the file being uploaded
+                        // is small and the network is quick we could receive the progress/completion events before we're
+                        // ready to handle them.
+                        scope.fileStore[fileId] =
+                        {
+                           state: scope.STATE_ADDED,
+                           fileName: fileName,
+                           nodeRef: updateNodeRef,
+                           uploadData: uploadData,
+                           request: request
+                        };
+
+                        // Add file to file table
+                        scope.dataTable.addRow(data);
+                        scope.addedFiles[uniqueFileToken] = scope._getUniqueFileToken(data);
+
+                        // Enable the Esc key listener
+                        scope.widgets.escapeListener.enable();
+                        scope.panel.setFirstLastFocusable();
+                        scope.panel.show();
+                     }
+                     catch(exception)
+                     {
+                        Alfresco.logger.error("DNDUpload_show: The following exception occurred processing a file to upload: ", exception);
+                     }
+                  }
+
+                  // If we've not hit the max, recurse info the function...
+                  scope._addFiles(i+1, max, scope);
+               }
             },
 
             //**************************************************************************
