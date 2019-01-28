@@ -39,16 +39,20 @@ SoftwareLoop.UploaderPlusAdmin = function (htmlId) {
       if ($hasEventInterest(this.subFolderPicker, args)) {
         var picker = args[1].eventGroup;
         if (picker) {
-          var excludedSubFoldersName = [];
+          var excludedSubFolders = [];
           var selectedItems = picker.selectedItems;
           if (selectedItems) {
             for (var key in selectedItems) {
               if (key.indexOf("workspace") != -1) {
-                excludedSubFoldersName.push(selectedItems[key].name);
+                excludedSubFolders.push({
+                  "name" : selectedItems[key].name,
+                  "nodeRef" : selectedItems[key].nodeRef,
+                  "path" : selectedItems[key].displayPath + "/" + selectedItems[key].name,
+                });
               }
             }
           }
-          this.currentEditedData.excludedSubFoldersName = excludedSubFoldersName;
+          this.currentEditedData.excludedSubFolders = excludedSubFolders;
         }
       }
     }, this);
@@ -123,15 +127,13 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
     excludedSubFoldersFormatter: function (elCell, oRecord, oColumn, oData) {
         Alfresco.logger.debug("excludedSubFoldersFormatter", arguments);
         var folders = oData || [];
-        var text = "";
-        for (var i = 0, ii = folders.length; i < ii; i++) {
-          var folder = folders[i];
-          if (i > 0) {
-            text += ", ";
-          }
-          text += folder;
+        var html = "<span>" + this.msg("excluded.subFolders.no.folders.found") + "</span>";
+        if (folders.length > 0) {
+          html = "<div class='action'>" +
+              "<a class='show-excluded-subfolder'>" + this.msg("excluded.subFolders.details") + "</a>"
+              + "</div>";
         }
-        elCell.innerHTML = text;
+        elCell.innerHTML = html;
         Alfresco.logger.debug("END excludedSubFoldersFormatter");
     },
 
@@ -161,7 +163,7 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
                 formatter: SoftwareLoop.hitch(this, this.allowedTypesFormatter)
             },
             {
-                key: "excludedSubFoldersName",
+                key: "excludedSubFolders",
                 label: this.msg("title.excluded.subFolders"),
                 sortable: false,
                 formatter: SoftwareLoop.hitch(this, this.excludedSubFoldersFormatter)
@@ -182,7 +184,7 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
                 connXhrMode: "queueRequests",
                 responseSchema: {
                     resultsList: "results",
-                    fields: ["path", "nodeRef", "allowedTypes", "excludedSubFoldersName"]
+                    fields: ["path", "nodeRef", "allowedTypes", "excludedSubFolders"]
                 }
             });
 
@@ -219,6 +221,14 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
             "a.delete-upload-folder"
         );
         Alfresco.logger.debug("END setupDataTable");
+
+        // Attach event to delete links
+        YAHOO.util.Event.delegate(
+            this.id,
+            "click",
+            SoftwareLoop.hitch(this, this.showExcludedSubfolderHandler),
+            "a.show-excluded-subfolder"
+        );
     },
 
     setupNewUploadFolderButton: function () {
@@ -434,6 +444,47 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
             failureMessage: this.msg("operation.failed")
         });
         Alfresco.logger.debug("END deleteUploadFolderHandler");
+    },
+
+    showExcludedSubfolderHandler: function (e, el, container) {
+      Alfresco.logger.debug("showExcludedSubfolderHandler", arguments);
+      var tr = el.parentNode.parentNode.parentNode;
+      var record = this.widgets.dataTable.getRecord(tr);
+
+      var handleClose = function() {
+        this.hide();
+        return true;
+      };
+
+      var showDialog = new YAHOO.widget.SimpleDialog('dtDialog', {
+        fixedcenter: true,
+        visible: false,
+        draggable: true,
+        close: false,
+        constraintoviewport: true,
+        modal: true,
+        buttons: [{text: this.msg('button.close'), handler: handleClose, isDefault:true }]
+      });
+
+      var html = "<div class='excluded-sub-folders'><div class='body scrollableList yui-dt'><table><tbody>";
+      html += "<thead><tr><th>" + this.msg("title.name") + "</th><th>" + this.msg("title.path") + "</th><tr></thead>";
+      var excludedSubFolders = record.getData("excludedSubFolders");
+      if (excludedSubFolders) {
+        for (var i = 0, ii = excludedSubFolders.length; i < ii; i++) {
+          var excludedSubFolder = excludedSubFolders[i];
+          html += "<tr>";
+          html +=   "<td>" + excludedSubFolder.name + "</td>";
+          html +=   "<td>" + excludedSubFolder.path + "</td>";
+          html += "</tr>";
+        }
+      }
+      html += "</tbody><table></div></div>";
+
+      showDialog.setHeader(this.msg("title.excluded.subFolders"));
+      showDialog.setBody(html);
+      showDialog.render(document.body);
+      showDialog.show();
+      Alfresco.logger.debug("END showExcludedSubfolderHandler");
     },
 
     populateAllowedTypesSelect: function (selectNode) {
