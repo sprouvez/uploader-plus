@@ -1,4 +1,5 @@
 Alfresco.logger.debug("uploader-plus-admin.js");
+var $hasEventInterest = Alfresco.util.hasEventInterest;
 
 SoftwareLoop.UploaderPlusAdmin = function (htmlId) {
     Alfresco.logger.debug("UploaderPlusAdmin constructor");
@@ -7,6 +8,50 @@ SoftwareLoop.UploaderPlusAdmin = function (htmlId) {
         htmlId,
         ["button", "container", "datasource", "datatable", "paginator", "history", "animation"]
     );
+
+    YAHOO.Bubbling.on("objectFinderReady", function(layer, args) {
+      if ($hasEventInterest(this.id + "-edit-form_assoc_up_excludedSubFolders-cntrl", args)) {
+        var subFolderPicker = args[1].eventGroup;
+        if (subFolderPicker) {
+          this.subFolderPicker = subFolderPicker;
+          this.pickerRootNodeRef = this.subFolderPicker.options.currentItem;
+        }
+      }
+    }, this);
+
+    YAHOO.Bubbling.on("parentDetails", function (layer, args) {
+      if ($hasEventInterest(this.subFolderPicker, args)) {
+        var obj = args[1];
+        if (obj && obj.parent) {
+          var item = obj.parent;
+          while (item) {
+            if (item.nodeRef == this.pickerRootNodeRef) {
+              delete item.parent;
+              break;
+            }
+            item = item.parent;
+          }
+        }
+      }
+    }, this);
+
+    YAHOO.Bubbling.on("renderCurrentValue", function(layer, args) {
+      if ($hasEventInterest(this.subFolderPicker, args)) {
+        var picker = args[1].eventGroup;
+        if (picker) {
+          var excludedSubFoldersName = [];
+          var selectedItems = picker.selectedItems;
+          if (selectedItems) {
+            for (var key in selectedItems) {
+              if (key.indexOf("workspace") != -1) {
+                excludedSubFoldersName.push(selectedItems[key].name);
+              }
+            }
+          }
+          this.currentEditedData.excludedSubFoldersName = excludedSubFoldersName;
+        }
+      }
+    }, this);
 
     return this;
 };
@@ -75,6 +120,21 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
         Alfresco.logger.debug("END allowedTypesFormatter");
     },
 
+    excludedSubFoldersFormatter: function (elCell, oRecord, oColumn, oData) {
+        Alfresco.logger.debug("excludedSubFoldersFormatter", arguments);
+        var folders = oData || [];
+        var text = "";
+        for (var i = 0, ii = folders.length; i < ii; i++) {
+          var folder = folders[i];
+          if (i > 0) {
+            text += ", ";
+          }
+          text += folder;
+        }
+        elCell.innerHTML = text;
+        Alfresco.logger.debug("END excludedSubFoldersFormatter");
+    },
+
     actionFormatter: function (elCell, oRecord, oColumn, oData) {
         Alfresco.logger.debug("actionFormatter", arguments);
         var nodeRef = oRecord.getData().nodeRef;
@@ -101,6 +161,12 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
                 formatter: SoftwareLoop.hitch(this, this.allowedTypesFormatter)
             },
             {
+                key: "excludedSubFoldersName",
+                label: this.msg("title.excluded.subFolders"),
+                sortable: false,
+                formatter: SoftwareLoop.hitch(this, this.excludedSubFoldersFormatter)
+            },
+            {
                 key: "actions",
                 label: this.msg("title.actions"),
                 sortable: false,
@@ -116,7 +182,7 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
                 connXhrMode: "queueRequests",
                 responseSchema: {
                     resultsList: "results",
-                    fields: ["path", "nodeRef", "allowedTypes"]
+                    fields: ["path", "nodeRef", "allowedTypes", "excludedSubFoldersName"]
                 }
             });
 
@@ -267,6 +333,7 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
     editUploadFolderRecord: function (record) {
         Alfresco.logger.debug("editUploadFolderRecord", arguments);
         var data = record.getData();
+        this.currentEditedData = data;
 
         var formHtmlId = this.id + "-edit-form";
         var templateUrl = YAHOO.lang.substitute(
@@ -292,7 +359,7 @@ YAHOO.extend(SoftwareLoop.UploaderPlusAdmin, Alfresco.component.Base, {
             actionUrl: actionUrl,
             destroyOnHide: true,
             doBeforeDialogShow: {
-                fn: function () {
+                fn: function (p_form, p_dialog) {
                     Alfresco.logger.debug("doBeforeDialogShow callback", arguments);
                     var titleNode = YAHOO.util.Dom.get(formHtmlId + "-dialogTitle");
                     if (titleNode) {

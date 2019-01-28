@@ -11,6 +11,13 @@
             "${allowedType}"<#if allowedType_has_next>,</#if>
             </#list>
         </#if>
+    ],
+    "excludedSubFoldersName": [
+      <#if node.associations["up:excludedSubFolders"]?has_content>
+        <#list node.associations["up:excludedSubFolders"] as excludedSubFolder>
+          "${excludedSubFolder.properties.name}"<#if excludedSubFolder_has_next>,</#if>
+        </#list>
+      </#if>
     ]
     }<#if node_has_next>,</#if>
     </#list>
