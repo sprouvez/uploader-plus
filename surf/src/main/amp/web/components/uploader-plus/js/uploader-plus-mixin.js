@@ -18,6 +18,18 @@ SoftwareLoop.UploaderPlusMixin = {
     loadTypes: function (callback) {
         Alfresco.logger.debug("loadTypes", arguments);
         var url;
+
+        // If we need to use alfresco upload component
+        // but don't want uploader-plus treatment
+        // add disableUploderPlus to the upload configuration
+        if (this.showConfig.disableUploderPlus) {
+          this.types = null;
+          if (callback) {
+              callback();
+          }
+          return;
+        }
+
         if (this.showConfig.destination && Alfresco.util.NodeRef(this.showConfig.destination).id) {
             Alfresco.logger.debug("Repository folder", this.showConfig.destination);
             url = YAHOO.lang.substitute(
