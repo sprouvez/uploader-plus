@@ -24,14 +24,15 @@ if (logger.isLoggingEnabled()) {
 }
 
 var destNode = null;
-
+var initialDestNode = null;
 if (destination !== null) {
     destNode = search.findNode(destination);
+    initialDestNode = destNode;
 } else if (siteId !== null) {
     var site = siteService.getSite(siteId);
     destNode = site.getContainer(containerId);
-
     destNode = destNode.childByNamePath(path);
+    initialDestNode = destNode;
 }
 
 
@@ -42,5 +43,23 @@ while (destNode !== null && !destNode.hasAspect("up:UploadFolder")) {
 if (destNode === null) {
     model.types = null;
 } else {
-    model.types = destNode.properties["up:allowedTypes"];
+    var excludedSubFolders = destNode.associations["up:excludedSubFolders"] || [];
+    for (var i = 0, ii = excludedSubFolders.length; i < ii; i++) {
+      var excludedSubFolder = excludedSubFolders[i];
+      if (excludedSubFolder.nodeRef.equals(destNode.nodeRef)) {
+        break;
+      }
+    }
+    model.types = isExcludedFolder(destNode, initialDestNode) ? null : destNode.properties["up:allowedTypes"];
+}
+
+function isExcludedFolder(destNode, initialDestNode) {
+  var excludedSubFolders = destNode.associations["up:excludedSubFolders"] || [];
+  for (var i = 0, ii = excludedSubFolders.length; i < ii; i++) {
+  var excludedSubFolder = excludedSubFolders[i];
+    if (excludedSubFolder.nodeRef.equals(initialDestNode.nodeRef)) {
+      return true;
+    }
+  }
+  return false;
 }
