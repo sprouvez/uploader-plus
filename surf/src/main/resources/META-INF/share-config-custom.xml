@@ -12,30 +12,37 @@
     -->
 
     <config evaluator="aspect" condition="up:UploadFolder">
-        <forms>
-            <form>
-                <field-visibility>
-                    <show id="up:allowedTypes"/>
-                </field-visibility>
-            </form>
-            <form id="upload-folder">
-                <field-visibility>
-                    <show id="up:allowedTypes"/>
-                </field-visibility>
-                <edit-form
-                        template="../documentlibrary/forms/doclib-simple-metadata.ftl"/>
-                <appearance>
-                    <field id="up:allowedTypes">
-                        <control
-                                template="/uploader-plus/controls/selecttypes.ftl">
-                            <control-param name="styleClass">
-                                supported-types-select
-                            </control-param>
-                        </control>
-                    </field>
-                </appearance>
-            </form>
-        </forms>
+      <forms>
+          <form>
+              <field-visibility>
+                  <show id="up:allowedTypes"/>
+                  <show id="up:excludedSubFolders"/>
+              </field-visibility>
+          </form>
+          <form id="upload-folder">
+              <field-visibility>
+                  <show id="up:allowedTypes"/>
+                  <show id="up:excludedSubFolders"/>
+              </field-visibility>
+              <edit-form
+                      template="../documentlibrary/forms/doclib-simple-metadata.ftl"/>
+              <appearance>
+                  <field id="up:allowedTypes">
+                      <control
+                              template="/uploader-plus/controls/selecttypes.ftl">
+                          <control-param name="styleClass">
+                              supported-types-select
+                          </control-param>
+                      </control>
+                  </field>
+                  <field id="up:excludedSubFolders">
+                    <control template="/org/alfresco/components/form/controls/association.ftl">
+                      <control-param name="startLocation">{self}</control-param>
+                    </control>
+                  </field>
+              </appearance>
+          </form>
+      </forms>
     </config>
 
 </alfresco-config>

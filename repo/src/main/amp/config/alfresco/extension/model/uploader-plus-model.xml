@@ -9,6 +9,7 @@
 
     <imports>
         <import uri="http://www.alfresco.org/model/dictionary/1.0" prefix="d"/>
+        <import uri="http://www.alfresco.org/model/content/1.0" prefix="cm" />
     </imports>
 
     <namespaces>
@@ -31,6 +32,19 @@
                     </index>
                 </property>
             </properties>
+            <associations>
+              <association name="up:excludedSubFolders">
+                <title>Excluded sub-folders</title>
+                <source>
+                  <mandatory>false</mandatory>
+                  <many>true</many>
+                </source>
+                <target>
+                  <class>cm:folder</class>
+                  <many>true</many>
+                </target>
+              </association>
+            </associations>
         </aspect>
     </aspects>
 
